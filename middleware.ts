@@ -1,18 +1,35 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => req.cookies.getAll(),
-        setAll: (cookies) =>
-          cookies.forEach((c) => res.cookies.set(c.name, c.value)),
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options) {
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+        },
+        remove(name: string, options) {
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+          })
+        },
       },
     }
   )
@@ -21,19 +38,21 @@ export async function middleware(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const path = req.nextUrl.pathname
+  const pathname = request.nextUrl.pathname
 
-  if (!user && path.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', req.url))
+  // 🔒 BELUM LOGIN → DASHBOARD
+  if (!user && pathname.startsWith('/dashboard')) {
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && path.startsWith('/login')) {
-    return NextResponse.redirect(new URL('/dashboard', req.url))
+  // 🔁 SUDAH LOGIN → LOGIN / REGISTER
+  if (user && (pathname === '/login' || pathname === '/register')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  return res
+  return response
 }
 
 export const config = {
-  matcher: ['/login', '/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/login', '/register'],
 }
